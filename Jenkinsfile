@@ -48,9 +48,9 @@ stage('Deploy DEV') {
   		 sh '''#!/usr/bin/env bash
   		 echo "Shell Process ID: $$"
   		 # Replace Repository and tag
-  		 cd ./argo-cd/sampleapp
-  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/sampleapp/" -i values-dev.yaml
-  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i values-dev.yaml
+  		 cd ./gitops-webapp-demo/deployment/dev/
+  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/gitops-webapp-demo/" -i deployment.yaml
+  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i deployment.yaml
   		 git commit -am 'Publish new version' && git push || echo 'no changes'
   		 '''
   	 }
@@ -66,9 +66,9 @@ stage('Deploy PROD') {
   		 sh '''#!/usr/bin/env bash
   		 echo "Shell Process ID: $$"
   		 # Replace Repository and tag
-  		 cd ./argo-cd/sampleapp
-  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/sampleapp/" -i values-prod.yaml
-  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i values-prod.yaml
+  		 cd ./gitops-webapp-demo/deployment/dev/
+  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/gitops-webapp-demo/" -i deployment.yaml
+  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i deployment.yaml
   		 git commit -am 'Publish new version' && git push || echo 'no changes'
   		 '''
   	 }
