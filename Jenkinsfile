@@ -1,66 +1,76 @@
-stages:
-  - build
-  - publish
-  - deploy-dev
-  - deploy-prod
+environment {
+REGISTRY                 = credentials('REGISTRY_NAME')
+DOCKER_REGISTRY_PASSWORD = credentials('DOCKER_REGISTRY_PASSWORD')
+DOCKER_REGISTRY_USER     = credentials('DOCKER_REGISTRY_USERNAME')
+GITHUB_CREDS             = credentials('GITHUB_CREDS')
+}
 
-build:
-  stage: build
-  image:
-    name: golang:1.13.1
-  script:
-    - go build -o main main.go
-  artifacts:
-    paths:
-      - main
-  variables:
-    CGO_ENABLED: 0
+stage('Get GIT_COMMIT') {
+  steps {
+  	script {
+  		GIT_COMMIT = sh(returnStdout: true, script: "git log -n 1 --pretty=format:'%h'").trim()
+  	}
+  }
+}
 
-publish:
-  stage: publish
-  image:
-    name: cnych/kaniko-executor:debug
-    entrypoint: [""]
-  script:
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile ./Dockerfile --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-  dependencies:
-    - build  
-  only:
-    - master
+stage('docker-build') {
+   options {
+  	 timeout(time: 10, unit: 'MINUTES')
+   }
+   steps {
+  	 sh '''#!/usr/bin/env bash
+  	 echo "Shell Process ID: $$"
+  	 docker login --user $DOCKER_REGISTRY_USER --	password $DOCKER_REGISTRY_PASSWORD
+  	 docker build --tag ${REGISTRY}/sampleapp:${BRANCH}-${GIT_COMMIT} .
+  	 docker push ${REGISTRY}/sampleapp:${BRANCH}-${GIT_COMMIT}
+  	 '''
+   }
+}
 
-deploy-dev:
-  stage: deploy-dev
-  image: cnych/kustomize:v1.0
-  before_script:
-    - git remote set-url origin http://${CI_USERNAME}:${CI_PASSWORD}@git.k8s.local/course/gitops-webapp.git
-    - git config --global user.email "gitlab@git.k8s.local"
-    - git config --global user.name "GitLab CI/CD"
-  script:
-    - git checkout -B master
-    - cd deployment/dev
-    - kustomize edit set image $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-    - cat kustomization.yaml
-    - git commit -am '[skip ci] DEV image update'
-    - git push origin master
-  only:
-    - master
+  stage('Clone Helm Chart repo') {
+      steps {
+          dir('argo-cd') {
+              git branch: 'main', credentialsId: 'GITHUB_CREDS', url: YOUR_SSH_REPO
+              sh '''#!/usr/bin/env bash
+                  git config --global user.email "jenkins-ci@gitlab.com"
+                  git config --global user.name "jenkins-ci"
+              '''
+          }
+      }
+  }
 
-deploy-prod:
-  stage: deploy-prod
-  image: cnych/kustomize:v1.0
-  before_script:
-    - git remote set-url origin http://${CI_USERNAME}:${CI_PASSWORD}@git.k8s.local/course/gitops-webapp.git
-    - git config --global user.email "gitlab@git.k8s.local"
-    - git config --global user.name "GitLab CI/CD"
-  script:
-    - git checkout -B master
-    - git pull origin master
-    - cd deployment/prod
-    - kustomize edit set image $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-    - cat kustomization.yaml
-    - git commit -am '[skip ci] PROD image update'
-    - git push origin master
-  only:
-    - master
-  when: manual
+stage('Deploy DEV') {
+   when {
+  	 branch 'dev'
+   }
+   script {
+  	 steps {
+  		 sh '''#!/usr/bin/env bash
+  		 echo "Shell Process ID: $$"
+  		 # Replace Repository and tag
+  		 cd ./argo-cd/sampleapp
+  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/sampleapp/" -i values-dev.yaml
+  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i values-dev.yaml
+  		 git commit -am 'Publish new version' && git push || echo 'no changes'
+  		 '''
+  	 }
+   }
+}
+
+stage('Deploy PROD') {
+   when {
+  	 branch 'prod'
+   }
+   script {
+  	 steps {
+  		 sh '''#!/usr/bin/env bash
+  		 echo "Shell Process ID: $$"
+  		 # Replace Repository and tag
+  		 cd ./argo-cd/sampleapp
+  		 sed -r "s/^(\s*repository\s*:\s*).*/\1${REGISTRY}\/sampleapp/" -i values-prod.yaml
+  		 sed -r "s/^(\s*tag\s*:\s*).*/\1${BRANCH}-${GIT_COMMIT}/" -i values-prod.yaml
+  		 git commit -am 'Publish new version' && git push || echo 'no changes'
+  		 '''
+  	 }
+   }
+}
